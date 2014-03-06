@@ -1,0 +1,7 @@
+#!/bin/bash
+
+HOME="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SCALA="/usr/local/opt/scala/bin/scala"
+MAIN_CLASS="org.pddl.Planner"
+
+$SCALA -classpath "$HOME/bin" $MAIN_CLASS $@
