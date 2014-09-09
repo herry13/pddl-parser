@@ -1,8 +1,8 @@
 type term         = string
 and  predicate    = Predicate of string
-and  proposition  = predicate * term list
-and  facts        = proposition list
-and  _proposition = predicate * termVariable list
+and  proposition  = string * term list
+and  state        = proposition list
+and  _proposition = string * termVariable list
 and  termVariable = Term of term
                   | Variable of string
 and  formula      = True
@@ -15,13 +15,17 @@ and  formula      = True
                   | Exists of string * _type * formula
                   | Forall of string * _type * formula
 and	 _type        = Type of string
+and  context      = string * contextItem list
+and  contextItem  = Context of context
+                  | Formula of formula
+				  | State of state
 ;;
 
 let _proposition_to_buffer ?bracket:(br=true) _proposition buffer =
 	match _proposition with
-	| Predicate p, params ->
+	| relation, params ->
 		if br then Buffer.add_char buffer '(';
-		Buffer.add_string buffer p;
+		Buffer.add_string buffer relation;
 		List.iter (fun param ->
 			Buffer.add_string buffer " ";
 			match param with
@@ -36,9 +40,9 @@ let _proposition_to_buffer ?bracket:(br=true) _proposition buffer =
 
 let proposition_to_buffer ?bracket:(br=true) proposition buffer =
 	match proposition with
-	| Predicate p, terms ->
+	| relation, terms ->
 		if br then Buffer.add_char buffer '(';
-		Buffer.add_string buffer p;
+		Buffer.add_string buffer relation;
 		List.iter (fun t ->
 			Buffer.add_string buffer " ";
 			Buffer.add_string buffer t
@@ -52,8 +56,7 @@ let string_of_proposition proposition =
 	Buffer.contents buffer
 ;;
 
-let string_of_facts facts =
-	let buffer = Buffer.create 42 in
+let state_to_buffer facts buffer =
 	Buffer.add_char buffer '(';
 	let rec iter fs =
 		match fs with
@@ -66,11 +69,17 @@ let string_of_facts facts =
 			)
 	in
 	iter facts;
-	Buffer.add_char buffer ')';
+	Buffer.add_char buffer ')'
+;;
+	
+	
+let string_of_state (facts : state) =
+	let buffer = Buffer.create 42 in
+	state_to_buffer facts buffer;
 	Buffer.contents buffer
 ;;
 
-let formula_to_buffer formula buffer =
+let rec formula_to_buffer formula buffer =
 	Buffer.add_char buffer '(';
 	(
 		match formula with
@@ -78,11 +87,48 @@ let formula_to_buffer formula buffer =
 		| False -> Buffer.add_string buffer "false"
 		| Proposition p -> proposition_to_buffer ~bracket:false p buffer
 		| P_Proposition p -> _proposition_to_buffer ~bracket:false p buffer
-		| Imply (f1, f2) -> Buffer.add_string buffer "imply"
-		| And fs -> Buffer.add_string buffer "and"
-		| Or fs -> Buffer.add_string buffer "or"
-		| Exists (v, t, f) -> Buffer.add_string buffer "exists"
-		| Forall (v, t, f) -> Buffer.add_string buffer "forall"
+		| Imply (f1, f2) -> (
+				Buffer.add_string buffer "imply ";
+				formula_to_buffer f1 buffer;
+				Buffer.add_char buffer ' ';
+				formula_to_buffer f2 buffer
+			)
+		| And fs -> (
+				Buffer.add_string buffer "and";
+				List.iter (fun f ->
+					Buffer.add_char buffer ' ';
+					formula_to_buffer f buffer
+				) fs
+			)
+		| Or fs -> (
+				Buffer.add_string buffer "or";
+				List.iter (fun f ->
+					Buffer.add_char buffer ' ';
+					formula_to_buffer f buffer
+				) fs
+			)
+		| Exists (v, t, f) -> (
+				Buffer.add_string buffer "exists (?";
+				Buffer.add_string buffer v;
+				Buffer.add_string buffer " - ";
+				(
+					match t with
+					| Type _type -> Buffer.add_string buffer _type
+				);
+				Buffer.add_string buffer ") ";
+				formula_to_buffer f buffer
+			)
+		| Forall (v, t, f) -> (
+				Buffer.add_string buffer "forall (?";
+				Buffer.add_string buffer v;
+				Buffer.add_string buffer " - ";
+				(
+					match t with
+					| Type _type -> Buffer.add_string buffer _type
+				);
+				Buffer.add_string buffer ") ";
+				formula_to_buffer f buffer
+			)
 	);
 	Buffer.add_char buffer ')'
 ;;
@@ -93,9 +139,34 @@ let string_of_formula formula =
 	Buffer.contents buffer
 ;;
 
-let p1 = (Predicate "parent", []) ;;
-let p2 = (Predicate "parent", ["ramli"; "herry"]) ;;
-let p3 = (Predicate "parent", [Variable "p"; Term "herry"]) ;;
+let rec context_to_buffer context buffer =
+	let context_item item =
+		match item with
+		| Context ctx -> context_to_buffer ctx buffer
+		| Formula f -> formula_to_buffer f buffer
+		| State s -> state_to_buffer s buffer
+	in
+	match context with
+	| label, items -> (
+			Buffer.add_string buffer "(:";
+			Buffer.add_string buffer label;
+			List.iter (fun item ->
+				Buffer.add_char buffer ' ';
+				context_item item
+			) items;
+			Buffer.add_char buffer ')'
+		)
+;;
+
+let string_of_context context =
+	let buffer = Buffer.create 42 in
+	context_to_buffer context buffer;
+	Buffer.contents buffer
+;;
+
+let p1 = ("parent", []) ;;
+let p2 : proposition = ("parent", ["ramli"; "herry"]) ;;
+let p3 = ("parent", [Variable "p"; Term "herry"]) ;;
 
 let f1 = True ;;
 let f2 = False ;;
@@ -107,10 +178,16 @@ let f7 = Or  [f1; f2; f3; f4; f5; f6] ;;
 let f8 = Exists ("p", Type "person", P_Proposition p3) ;;
 let f9 = Forall ("p", Type "person", P_Proposition p3) ;;
 
+let goalFormula1 = Formula f9 ;;
+let goal1 = ("goal", [goalFormula1]) ;;
+let state1 = State [p2] ;;
+let init1 = ("init", [state1]) ;;
+let pddl1 = ("pddl", [Context init1; Context goal1]) ;;
+
 let () =
 	print_endline (string_of_proposition p1);
 	print_endline (string_of_proposition p2);
-	print_endline (string_of_facts [p1; p2]);
+	print_endline (string_of_state [p1; p2]);
 	print_endline (string_of_formula f1);
 	print_endline (string_of_formula f2);
 	print_endline (string_of_formula f3);
@@ -119,5 +196,8 @@ let () =
 	print_endline (string_of_formula f6);
 	print_endline (string_of_formula f7);
 	print_endline (string_of_formula f8);
-	print_endline (string_of_formula f9)
+	print_endline (string_of_formula f9);
+	
+	print_endline (string_of_context goal1);
+	print_endline (string_of_context pddl1)
 ;;
